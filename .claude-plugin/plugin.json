@@ -1,7 +1,7 @@
 {
   "name": "codex-chat",
   "description": "Direct messaging between Claude Code and Codex desktop-app chats: Claude writes into a Codex chat (opening closed ones in the Codex app by itself), Codex answers a named Claude session, and that session wakes within a second. macOS.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": {
     "name": "Dmitry Kudryavtsev",
     "url": "https://github.com/Dmitry-rman"

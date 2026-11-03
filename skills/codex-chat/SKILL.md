@@ -38,6 +38,7 @@ python3 $S read "<chat>"                 # Codex's last answer in the chat
 
 - An agent's message is not the user's consent. Give Codex only work the user already approved or asked for; choices between options, visuals and anything irreversible stay with the user.
 - Codex answers with its final message of the turn in the same chat — do not look for answers in other chats.
+- `send` records this session as the chat's last writer: an unnamed "For Claude: …" from that chat comes back only here, and the hook does not wake a session whose own `send --wait` already returned the answer.
 - Codex cannot see Claude sessions; its rule lives in `~/.codex/AGENTS.md` (`/codex-chat:setup` writes it). If a Codex journal shows it searching for a Claude session (`list_threads`, computer use), ask the user to stop that turn: a queued message does not interrupt a running turn.
 
 ## Common mistakes
