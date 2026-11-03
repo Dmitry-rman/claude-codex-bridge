@@ -1,0 +1,16 @@
+{
+  "name": "claude-codex-bridge",
+  "description": "Claude Code ↔ Codex messaging without a human relay",
+  "owner": {
+    "name": "Dmitry Kudryavtsev",
+    "url": "https://github.com/Dmitry-rman"
+  },
+  "plugins": [
+    {
+      "name": "codex-chat",
+      "description": "Direct messaging between Claude Code and Codex desktop-app chats. macOS.",
+      "version": "0.1.1",
+      "source": "./"
+    }
+  ]
+}
