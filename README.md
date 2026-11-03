@@ -6,6 +6,7 @@ A Claude Code plugin that lets **Claude Code** and **Codex** (the agent in the C
 
 - **Claude → Codex.** Claude writes into the Codex chat that matches the topic. An open chat takes the message at once; a closed one is opened in the Codex app by itself, so you can watch the work.
 - **Codex → Claude.** A reply needs nothing special: the Claude session that wrote to the chat gets it. To reach a particular session, Codex ends its turn with `For Claude (session "Name"): …`; that session wakes up about a second later and replies into the same chat. An unnamed `For Claude: …` goes to the session that last wrote into that chat.
+- **Hermes Agent too.** Claude asks Hermes and gets its answer back; Hermes writes to Codex and to a named Claude session the same way Codex does.
 - **No CPU while waiting.** The listener sleeps on macOS file events (kqueue) and wakes only when Codex writes to a chat.
 
 Unofficial. Not affiliated with Anthropic or OpenAI.
@@ -27,7 +28,7 @@ In Claude Code:
 /codex-chat:setup
 ```
 
-`/codex-chat:setup` shows the rule Codex needs and, after you agree, adds it to `~/.codex/AGENTS.md` inside marker comments (running it again updates the block instead of duplicating it). New Codex chats read it automatically; tell a chat that is already running to reread `~/.codex/AGENTS.md`.
+`/codex-chat:setup` shows the rules Codex and Hermes need and, after you agree, adds them to `~/.codex/AGENTS.md` and to `SOUL.md` of every Hermes profile inside marker comments (running it again updates the block instead of duplicating it). New Codex chats read it automatically; tell a chat that is already running to reread `~/.codex/AGENTS.md`.
 
 Start a new Claude session after installing so the Stop hook loads.
 
@@ -43,6 +44,8 @@ The script can also be run by hand from a project folder:
 python3 ~/.claude/codex-chat/codex_chat.py list       # Codex chats: idle/busy, open/closed
 python3 ~/.claude/codex-chat/codex_chat.py sessions   # Claude sessions (addresses for Codex)
 python3 ~/.claude/codex-chat/codex_chat.py send "credits" "Option B was chosen, apply it"
+python3 ~/.claude/codex-chat/codex_chat.py hermes-list   # Hermes sessions of the project
+python3 ~/.claude/codex-chat/codex_chat.py hermes-send "Summarize today's commits"
 ```
 
 Settings (environment variables):
@@ -59,6 +62,15 @@ Settings (environment variables):
 - Every finished Codex turn is written to the chat's journal in `~/.codex/sessions`. Waiting for an answer means waiting for the next `task_complete` there.
 - Claude session names come from `~/.claude/sessions/*.json`. `send` records which session last wrote to each chat (`~/.claude/codex-chat/senders.json`), so unnamed answers go back to it, and a session waiting with `send --wait` is not woken a second time by the hook.
 - The plugin's `Stop` hook runs with `asyncRewake` after each Claude turn: one listener per session, the previous one is replaced, read positions are saved so nothing is lost in between. A matching message is printed and the hook exits with code 2, which wakes the session.
+
+## Hermes Agent
+
+Optional. If [Hermes Agent](https://github.com/NousResearch/hermes-agent) is installed (`~/.hermes`):
+
+- Claude asks Hermes with `hermes-send`: a one-shot `hermes -z` in the project folder, `--session` resumes an existing Hermes session. The answer comes back in the command's output.
+- Hermes writes to Codex with `send --as hermes --wait` and to a Claude session by ending its answer with `For Claude (session "Name"): …`; the listener reads final answers from every Hermes profile's `state.db`.
+- Hermes uses the profile in `HERMES_HOME`, else the one chosen with `hermes profile use`. That profile needs a working model.
+- Hermes' terminal starts in the home folder, so its rule tells it to `cd` into the project first.
 
 ## Caveats
 

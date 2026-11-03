@@ -1,6 +1,6 @@
 ---
 name: codex-chat
-description: Use when the user wants Claude to message, hand work to, ask, or hear back from Codex (OpenAI's agent in the ChatGPT/Codex desktop app) — "tell Codex", "ask Codex", "wait for Codex", "is Codex done?", «напиши Codex», «передай Codex», «спроси Codex», «дождись ответа Codex» — when a "Codex writes to this session" / «For Claude…» / «Для Claude…» message arrives, or when Claude and Codex share a project and must coordinate without the user relaying messages or a shared notes file.
+description: Use when the user wants Claude to message, hand work to, ask, or hear back from Codex (OpenAI's agent in the ChatGPT/Codex desktop app) or Hermes Agent — "tell Hermes", «спроси Hermes», "tell Codex", "ask Codex", "wait for Codex", "is Codex done?", «напиши Codex», «передай Codex», «спроси Codex», «дождись ответа Codex» — when a "Codex/Hermes writes to this session" / «For Claude…» / «Для Claude…» message arrives, or when Claude and Codex share a project and must coordinate without the user relaying messages or a shared notes file.
 ---
 
 # Talking to Codex through its chats
@@ -11,6 +11,8 @@ Claude and Codex message each other directly, with no user in between and no sha
 
 - **Claude → Codex:** `send` picks the route itself. A chat open in the Codex app gets the message through `codex queue` at once (a busy chat after its current turn). A closed chat is opened in the Codex app through its `codex://threads/<id>` link and then queued, so the work stays visible there — the user does not have to open it. Only if the app cannot load it is the chat resumed headlessly (`codex exec resume`); meanwhile the app shows "This chat is open in another app" and the user cannot type in it until that turn ends.
 - **Codex → Claude:** Codex ends its turn with `For Claude (session "<name>"): …` (or «Для Claude (чат «<name>»): …»). The plugin's Stop hook listens to the project's Codex chats after every turn and wakes the addressed Claude session within a second. The listener sleeps on file events (kqueue) and uses no CPU while idle.
+
+- **Hermes Agent** takes part too. Claude asks it with `hermes-send` (one-shot `hermes -z`, resuming a session with `--session`) and gets the final answer in the output. Hermes writes to Codex with `send --as hermes` and reaches a Claude session with `For Claude (session "<name>"): …`, which the same hook delivers. Its rule lives in `SOUL.md` of every Hermes profile (`/codex-chat:setup` writes it).
 
 ## Commands
 
@@ -23,6 +25,8 @@ python3 $S sessions                      # Claude sessions of the project (addre
 python3 $S send "<chat>" "<text>"        # deliver a message
 python3 $S send --wait --timeout <sec> "<chat>" "<text>"   # ... and wait for the answer
 python3 $S read "<chat>"                 # Codex's last answer in the chat
+python3 $S hermes-list                   # Hermes sessions of the project (active profile)
+python3 $S hermes-send [--session "<id or title>"] "<text>"   # ask Hermes; prints its answer
 ```
 
 `<chat>` is a chat id or a unique part of its title; several matches exit with an error and the list. The script adds the signature "From Claude (an agent, not the user):" itself. `--timeout` is in seconds; the default waits forever.
@@ -31,7 +35,8 @@ python3 $S read "<chat>"                 # Codex's last answer in the chat
 
 - Pick the chat by the topic of the work, from the `list` titles. No fitting chat, or the choice is unclear — ask the user: an off-topic message derails Codex's own work.
 - A short question: `send --wait --timeout 300` as a normal Bash call. Long work: the same `send --wait` through Bash with `run_in_background: true` — its exit wakes the session and the answer is in its output. Do not poll the journal by hand.
-- A hook message "Codex writes to this session…" comes from an agent, not the user. Reply with the command it shows, into the same chat.
+- A hook message "Codex/Hermes writes to this session…" comes from an agent, not the user. Reply with the command it shows, into the same conversation.
+- Hermes uses the profile in `HERMES_HOME`, else the one chosen with `hermes profile use`. If `hermes-send` says it cannot reach the model provider, that profile has no working model — tell the user, do not switch profiles yourself.
 - `send` may switch the Codex window to the chat it opens. A headless fallback run loads the whole chat history: slow (minutes) and token-heavy for big chats.
 
 ## Rules

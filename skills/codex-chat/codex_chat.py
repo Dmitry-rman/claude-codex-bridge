@@ -18,8 +18,16 @@ costs no CPU. Chats and sessions belong to the git root of the current directory
   codex_chat.py read CHAT              last answer in the chat
   codex_chat.py wait CHAT              block until the chat finishes its current turn
   codex_chat.py wait [--to NAME]       block until a "For Claude" answer for NAME
-  codex_chat.py setup [--write]        show / install the rule Codex needs in ~/.codex/AGENTS.md
+  codex_chat.py send --as hermes ...   the same, signed as Hermes (Hermes → Codex)
+  codex_chat.py hermes-list            Hermes sessions of the project
+  codex_chat.py hermes-send [--session ID] TEXT   ask Hermes, print its final answer
+  codex_chat.py setup [--write]        show / install the rules for Codex (AGENTS.md) and Hermes (SOUL.md)
   codex_chat.py hook                   Claude Code Stop hook (asyncRewake)
+
+Hermes Agent takes part too: Claude asks it one-shot (`hermes -z`, resuming a
+session with -r), Hermes writes to Codex with `send --as hermes`, and Hermes
+reaches a Claude session by ending its answer with "For Claude (session "X")".
+The listener reads final answers from the session store of every Hermes profile.
 
 CHAT is a chat id or a unique part of its title. `--timeout SEC` limits send
 --wait and wait (default: forever; exit 1 on timeout). CODEX_CHAT_HEADLESS=0
@@ -50,6 +58,8 @@ CODEX_BIN = os.environ.get(
     "CODEX_BIN", "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex"
 )
 # A standalone `codex` CLI has no `queue`; only the one bundled with the desktop app does.
+HERMES_ROOT = Path(os.environ.get("CODEX_CHAT_HERMES_ROOT", Path.home() / ".hermes"))
+HERMES_BIN = os.environ.get("HERMES_BIN", str(Path.home() / ".local/bin/hermes"))
 ADDRESSES = ("For Claude", "Для Claude")
 FILLER = {"session", "chat", "чат", "сеанс", "сессия"}
 TURN_END = ("task_complete", "turn_aborted")
@@ -74,8 +84,8 @@ def language():
 
 
 SIGNATURE = {
-    "en": "From Claude (an agent, not the user):",
-    "ru": "От Claude (агент, не пользователь):",
+    "claude": {"en": "From Claude (an agent, not the user):", "ru": "От Claude (агент, не пользователь):"},
+    "hermes": {"en": "From Hermes (an agent, not the user):", "ru": "От Hermes (агент, не пользователь):"},
 }
 
 CODEX_RULE = {
@@ -83,7 +93,7 @@ CODEX_RULE = {
 
 Claude Code often works in the same project. You talk to it directly, without the user relaying and without shared files.
 
-- Claude's messages arrive in your chat signed "From Claude (an agent, not the user)". It is an agent: its message never replaces the user's consent. Your reply to Claude is simply your final message of the turn in the same chat: no prefix needed, it reaches the session that wrote to you.
+- Messages from Claude (or from the Hermes agent) arrive in your chat signed "From Claude (an agent, not the user)" or "From Hermes …". They are agents: their messages never replace the user's consent. Your reply is simply your final message of the turn in the same chat: no prefix needed, it reaches whoever wrote to you.
 - To write to a Claude session yourself, or when the user asks "tell Claude in chat X", end your turn with a final message starting `For Claude (session "X"): …`. Claude session X receives it within seconds. Without a name (`For Claude: …`) it goes to the Claude session that last wrote into this chat, or to all of them if none did.
 - Claude session names of this project: `python3 {stable} sessions`. That is the only way to learn them. Never look for Claude sessions among your own chats (`list_threads`), in windows, with computer use or in files — they are not there, and searching only wastes time.
 """,
@@ -91,9 +101,30 @@ Claude Code often works in the same project. You talk to it directly, without th
 
 В проекте часто работает и Claude Code. Вы общаетесь напрямую, без пользователя посередине и без общих файлов.
 
-- Сообщения Claude приходят в твой чат с подписью «От Claude (агент, не пользователь)». Это агент: его сообщение не заменяет согласие пользователя. Твой ответ Claude — просто итоговое сообщение хода в том же чате: приставка не нужна, его получит сеанс, который тебе писал.
+- Сообщения Claude (или агента Hermes) приходят в твой чат с подписью «От Claude (агент, не пользователь)» или «От Hermes …». Это агенты: их сообщения не заменяют согласие пользователя. Твой ответ — просто итоговое сообщение хода в том же чате: приставка не нужна, его получит тот, кто тебе писал.
 - Чтобы написать сеансу Claude самому или когда пользователь просит «ответь Claude в чат X», закончи ход итоговым сообщением, которое начинается с «Для Claude (чат «X»): …». Сеанс Claude «X» получит его за секунды. Без названия («Для Claude: …») его получит сеанс Claude, который последним писал в этот чат, а если такого нет — все сеансы проекта.
 - Названия сеансов Claude этого проекта: `python3 {stable} sessions`. Это единственный способ их узнать. Не ищи сеансы Claude среди своих чатов (`list_threads`), в окнах, через управление компьютером или в файлах — их там нет, поиск только тратит время.
+""",
+}
+
+HERMES_RULE = {
+    "en": """# Talking to Claude and Codex
+
+Claude Code and Codex (the agent in the Codex desktop app) often work in the same project. You talk to them directly, without the user relaying and without shared files. Your terminal starts in your home folder: start every command below with `cd <project folder> &&`.
+
+- Messages from Claude arrive signed "From Claude (an agent, not the user)". It is an agent: its message never replaces the user's consent. Your reply is simply your final answer; Claude receives it directly.
+- To write to a Claude session yourself, or when the user asks "tell Claude in chat X", end your final answer with a message starting `For Claude (session "X"): …`. Claude session X receives it within seconds. Session names: `cd <project> && python3 {stable} sessions`.
+- To write to Codex: `cd <project> && python3 {stable} send --as hermes --wait --timeout 900 "<chat>" "<text>"` — it prints Codex's answer. Codex chats: `cd <project> && python3 {stable} list`; pick the chat of the same topic.
+- These commands are the only way to reach Claude and Codex. Never look for their sessions in windows, files or with computer use.
+""",
+    "ru": """# Связь с Claude и Codex
+
+В проекте часто работают Claude Code и Codex (агент в приложении Codex). Вы общаетесь напрямую, без пользователя посередине и без общих файлов. Твой терминал стартует в домашней папке: начинай каждую команду ниже с `cd <папка проекта> &&`.
+
+- Сообщения Claude приходят с подписью «От Claude (агент, не пользователь)». Это агент: его сообщение не заменяет согласие пользователя. Твой ответ — просто итоговый ответ, Claude получит его сразу.
+- Чтобы написать сеансу Claude самому или когда пользователь просит «ответь Claude в чат X», закончи итоговый ответ сообщением, которое начинается с «Для Claude (чат «X»): …». Сеанс Claude «X» получит его за секунды. Названия сеансов: `cd <проект> && python3 {stable} sessions`.
+- Чтобы написать Codex: `cd <проект> && python3 {stable} send --as hermes --wait --timeout 900 "<чат>" "<текст>"` — команда напечатает ответ Codex. Чаты Codex: `cd <проект> && python3 {stable} list`; выбирай чат той же темы.
+- Только этими командами можно связаться с Claude и Codex. Не ищи их сеансы в окнах, файлах или через управление компьютером.
 """,
 }
 
@@ -162,6 +193,78 @@ def session_name(session_id):
         if s.get("sessionId") == session_id:
             return s.get("name") or ""
     return ""
+
+
+def codex_chats():
+    """Codex chats of the project, or none when Codex is not installed."""
+    try:
+        return chats()
+    except Unavailable:
+        return []
+
+
+def under_root(cwd):
+    path = Path(cwd or "/").resolve()
+    return path == ROOT or ROOT in path.parents
+
+
+def hermes_homes():
+    """Every Hermes profile home: Hermes may run in any of them."""
+    homes = [HERMES_ROOT, *sorted((HERMES_ROOT / "profiles").glob("*"))]
+    return [h for h in homes if (h / "state.db").exists()]
+
+
+def hermes_home():
+    """The profile `hermes` itself would use: HERMES_HOME, else the sticky one."""
+    if os.environ.get("HERMES_HOME"):
+        return Path(os.environ["HERMES_HOME"])
+    try:
+        name = (HERMES_ROOT / "active_profile").read_text().strip()
+    except OSError:
+        name = ""
+    return HERMES_ROOT / "profiles" / name if name and name != "default" else HERMES_ROOT
+
+
+def hermes_query(home, sql, args=()):
+    try:
+        with sqlite3.connect(f"file:{home / 'state.db'}?mode=ro", uri=True) as db:
+            return db.execute(sql, args).fetchall()
+    except sqlite3.Error as e:
+        raise Unavailable(f"the Hermes session store changed its format ({e})") from e
+
+
+def hermes_sessions(home):
+    rows = hermes_query(
+        home,
+        "SELECT id, coalesce(nullif(title, ''), id), cwd, coalesce(last_activity_at, started_at)"
+        " FROM sessions WHERE coalesce(archived, 0) = 0 AND coalesce(hidden, 0) = 0"
+        " ORDER BY coalesce(last_activity_at, started_at) DESC",
+    )
+    return [{"id": r[0], "title": r[1], "updated": r[3]} for r in rows if r[2] and under_root(r[2])]
+
+
+def find_hermes_session(home, key):
+    found = [s for s in hermes_sessions(home) if s["id"] == key]
+    if not found:
+        found = [s for s in hermes_sessions(home) if key.lower() in s["title"].lower()]
+    if len(found) != 1:
+        names = "\n".join(f"  {s['id']}  {s['title']}" for s in found) or "  none"
+        sys.exit(f"Session «{key}» must match exactly one Hermes session of {ROOT}, found:\n{names}")
+    return found[0]
+
+
+def hermes_answers(home, after_id):
+    """Final Hermes answers of the project after message id, and the id to resume from."""
+    last = hermes_query(home, "SELECT coalesce(max(id), 0) FROM messages")[0][0]
+    rows = hermes_query(
+        home,
+        "SELECT m.session_id, m.content, coalesce(nullif(s.title, ''), s.id), s.cwd"
+        " FROM messages m JOIN sessions s ON s.id = m.session_id"
+        " WHERE m.id > ? AND m.id <= ? AND m.role = 'assistant' AND m.finish_reason = 'stop'"
+        " ORDER BY m.id",
+        (after_id, last),
+    )
+    return [r[:3] for r in rows if under_root(r[3])], last
 
 
 def events(journal, offset=0):
@@ -292,9 +395,9 @@ def senders():
         return {}
 
 
-def record_sender(chat, **fields):
+def record_sender(chat, who="claude", **fields):
     """Remember which Claude session wrote to the chat, so an unnamed answer goes back to it."""
-    session = own_session_id()
+    session = own_session_id() if who == "claude" else who
     if not session:
         return
     STATE.mkdir(parents=True, exist_ok=True)
@@ -330,28 +433,60 @@ def delivers_here(chat_id, text, name, session):
         return not name or name_matches(to, name)
     # An unnamed answer belongs to whoever wrote to the chat last, if that session is open.
     last = sender.get("session")
+    if last == "hermes":
+        return False  # Hermes talks to Codex here and reads the answer itself.
     if not session or not last or not any(s.get("sessionId") == last for s in claude_sessions()):
         return True
     return last == session
 
 
+def new_hermes_answers(offsets):
+    """Final Hermes answers since the last look, across every profile."""
+    found = []
+    for home in hermes_homes():
+        key = f"hermes:{home}"
+        try:
+            if key not in offsets:
+                offsets[key] = hermes_answers(home, 1 << 62)[1]  # Start at the current end.
+            rows, offsets[key] = hermes_answers(home, offsets[key])
+        except Unavailable:
+            continue  # A Hermes change must not silence Codex.
+        found += [({"id": f"hermes:{sid}", "title": f"Hermes: {title}", "hermes": sid}, text or "")
+                  for sid, text, title in rows]
+    return found
+
+
+def watched_files(current):
+    paths = [c["journal"] for c in current]
+    try:
+        paths.append(state_db_path().with_name(state_db_path().name + "-wal"))
+    except Unavailable:
+        pass
+    for home in hermes_homes():
+        paths += [home / "state.db", home / "state.db-wal"]
+    return paths
+
+
 def wait_addressed(timeout, name_of, offsets=None, save=None, session=None):
     """First "For Claude" answer for this session; name_of() is read at match time."""
-    offsets = offsets if offsets is not None else {c["id"]: size(c["journal"]) for c in chats()}
+    if offsets is None:
+        offsets = {c["id"]: size(c["journal"]) for c in codex_chats()}
+        new_hermes_answers(offsets)
     deadline = deadline_of(timeout)
-    wal = state_db_path().with_name(state_db_path().name + "-wal")
     while deadline is None or time.monotonic() < deadline:
-        current = chats()
+        current = codex_chats()
+        found = []
         for chat in current:
             # A chat that appears while waiting is new from its first line.
-            found, offsets[chat["id"]] = events(chat["journal"], offsets.get(chat["id"], 0))
-            for e in found:
-                text = answer(e) if e["type"] in TURN_END else ""
-                if delivers_here(chat["id"], text, name_of(), session):
-                    save and save(offsets)
-                    return chat, text
+            events_, offsets[chat["id"]] = events(chat["journal"], offsets.get(chat["id"], 0))
+            found += [(chat, answer(e)) for e in events_ if e["type"] in TURN_END]
+        found += new_hermes_answers(offsets)
+        for chat, text in found:
+            if delivers_here(chat["id"], text, name_of(), session):
+                save and save(offsets)
+                return chat, text
         save and save(offsets)
-        sleep_until_change([c["journal"] for c in current] + [wal], deadline)
+        sleep_until_change(watched_files(current), deadline)
     return None, None
 
 
@@ -441,12 +576,13 @@ def pop_option(args, name, default):
 def cmd_send(args):
     wait = "--wait" in args
     timeout, args = pop_option([a for a in args if a != "--wait"], "--timeout", 0)
-    if len(args) != 2:
-        sys.exit("usage: codex_chat.py send [--wait] [--timeout SEC] CHAT TEXT")
+    who, args = pop_option(args, "--as", "claude")
+    if len(args) != 2 or who not in SIGNATURE:
+        sys.exit("usage: codex_chat.py send [--wait] [--timeout SEC] [--as claude|hermes] CHAT TEXT")
     chat = find_chat(args[0])
     offset = size(chat["journal"])
-    text = f"{SIGNATURE[language()]} {args[1]}"
-    record_sender(chat, wait_pid=os.getpid() if wait else None, answered=None)
+    text = f"{SIGNATURE[who][language()]} {args[1]}"
+    record_sender(chat, who, wait_pid=os.getpid() if wait else None, answered=None)
     holder = lock_holder(chat)
     opened = holder is None and open_in_app(chat)
     if opened:
@@ -470,7 +606,7 @@ def cmd_send(args):
         answer_text = wait_turn(chat, offset, float(timeout), new_turn=True)
         if answer_text is None:
             sys.exit("Timed out: Codex did not start or finish a turn.")
-        record_sender(chat, answered=answer_text)
+        record_sender(chat, who, answered=answer_text)
         print(f"[{chat['title']}] {answer_text}")
 
 
@@ -492,6 +628,50 @@ def cmd_read(args):
     print(answer(ends[-1]) if ends else "(no answers in this chat yet)")
 
 
+def cmd_hermes_list(_):
+    home = hermes_home()
+    if not (home / "state.db").exists():
+        raise Unavailable(f"no Hermes session store in {home}: is Hermes installed?")
+    found = hermes_sessions(home)
+    print(f"Hermes profile: {home}")
+    if not found:
+        print(f"No Hermes sessions in {ROOT} yet: hermes-send without --session starts one.")
+    for s in found[:15]:
+        when = time.strftime("%d.%m %H:%M", time.localtime(s["updated"] or 0))
+        print(f"{s['id']}  {when}  {s['title']}")
+
+
+def cmd_hermes_send(args):
+    """Ask Hermes and print its final answer: one-shot, in the project folder."""
+    timeout, args = pop_option(args, "--timeout", 0)
+    key, args = pop_option(args, "--session", None)
+    if len(args) != 1:
+        sys.exit("usage: codex_chat.py hermes-send [--session ID|TITLE] [--timeout SEC] TEXT")
+    home = hermes_home()
+    target = find_hermes_session(home, key) if key else None
+    started = time.time()
+    if target:
+        record_sender({"id": f"hermes:{target['id']}"}, wait_pid=os.getpid(), answered=None)
+    if not Path(HERMES_BIN).exists():
+        raise Unavailable(f"{HERMES_BIN} not found: install Hermes Agent or set HERMES_BIN")
+    run = subprocess.run(
+        [HERMES_BIN, "--in", str(ROOT), *(["-r", target["id"]] if target else []),
+         "-z", f"{SIGNATURE['claude'][language()]} {args[0]}"],
+        cwd=ROOT, env=dict(os.environ, HERMES_HOME=str(home)),
+        capture_output=True, text=True, timeout=float(timeout) or None,
+    )
+    reply = run.stdout.strip() or run.stderr.strip()
+    if not target:
+        fresh = [s for s in hermes_sessions(home) if (s["updated"] or 0) >= started - 1]
+        target = fresh[0] if fresh else None
+    if target:
+        record_sender({"id": f"hermes:{target['id']}"}, wait_pid=None, answered=reply)
+    title = f"«{target['title']}» {target['id']}" if target else "new session"
+    print(f"[Hermes {title}] {reply}")
+    if run.returncode:
+        sys.exit(run.returncode)
+
+
 def own_session_id():
     return os.environ.get("CLAUDE_CODE_SESSION_ID", "")
 
@@ -511,10 +691,9 @@ def cmd_wait(args):
     print(f"[{chat['title']}] {text}")
 
 
-def cmd_setup(args):
-    link_stable()
-    target = CODEX_HOME / "AGENTS.md"
-    rule = CODEX_RULE[language()].replace("{stable}", str(STABLE).replace(str(Path.home()), "~"))
+def upsert_rule(target, rules, write, reader):
+    """Put the rule block into target, replacing an earlier one; print what happens."""
+    rule = rules[language()].replace("{stable}", str(STABLE).replace(str(Path.home()), "~"))
     block = f"{RULE_START}\n{rule.strip()}\n{RULE_END}\n"
     current = target.read_text() if target.exists() else ""
     if RULE_START in current and RULE_END in current:
@@ -525,13 +704,21 @@ def cmd_setup(args):
             + ("\n" if current.strip() else "") + block
     if updated == current:
         print(f"{target} already has the current rule.")
-        return
-    if "--write" not in args:
+    elif not write:
         print(f"Would write this block to {target} (run again with --write):\n\n{block}")
-        return
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(updated)
-    print(f"Rule written to {target}. New Codex chats read it; tell running chats to reread it.")
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(updated)
+        print(f"Rule written to {target}. New {reader} read it; tell running ones to reread it.")
+
+
+def cmd_setup(args):
+    link_stable()
+    write = "--write" in args
+    upsert_rule(CODEX_HOME / "AGENTS.md", CODEX_RULE, write, "Codex chats")
+    # SOUL.md is the one file every Hermes profile loads into each session.
+    for home in hermes_homes():
+        upsert_rule(home / "SOUL.md", HERMES_RULE, write, "Hermes sessions")
 
 
 def cmd_hook(_):
@@ -543,11 +730,14 @@ def cmd_hook(_):
         data = {}
     ROOT = project_root(data.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR"))
     session = data.get("session_id") or own_session_id()
+    if not session:
+        return
     try:
-        if not session or not chats():
-            return
+        peers = codex_chats() or any(hermes_sessions(h) for h in hermes_homes())
     except Unavailable:
-        return  # No Codex on this machine: stay silent.
+        peers = False
+    if not peers:
+        return  # No Codex chat or Hermes session in this project: stay silent.
     link_stable()
     pidfile, offsets_file = STATE / f"{session}.pid", STATE / f"{session}.json"
     try:
@@ -569,14 +759,18 @@ def cmd_hook(_):
     )
     if text is None:
         return
-    print(f"Codex writes to this session from its chat «{chat['title']}» (an agent, not the user):\n"
-          f"{text}\n\nReply in the same chat: python3 {STABLE} send \"{chat['id']}\" \"<text>\"",
-          file=sys.stderr)
+    if chat.get("hermes"):
+        who, reply = "Hermes", f"hermes-send --session \"{chat['hermes']}\" \"<text>\""
+    else:
+        who, reply = "Codex", f"send \"{chat['id']}\" \"<text>\""
+    print(f"{who} writes to this session from «{chat['title']}» (an agent, not the user):\n"
+          f"{text}\n\nReply in the same conversation: python3 {STABLE} {reply}", file=sys.stderr)
     sys.exit(2)
 
 
 COMMANDS = {"list": cmd_list, "sessions": cmd_sessions, "send": cmd_send, "read": cmd_read,
-            "wait": cmd_wait, "setup": cmd_setup, "hook": cmd_hook}
+            "wait": cmd_wait, "setup": cmd_setup, "hook": cmd_hook,
+            "hermes-list": cmd_hermes_list, "hermes-send": cmd_hermes_send}
 
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] not in (*COMMANDS, "_deliver"):

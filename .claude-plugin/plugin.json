@@ -1,7 +1,7 @@
 {
   "name": "codex-chat",
-  "description": "Direct messaging between Claude Code and Codex desktop-app chats: Claude writes into a Codex chat (opening closed ones in the Codex app by itself), Codex answers a named Claude session, and that session wakes within a second. macOS.",
-  "version": "0.1.2",
+  "description": "Direct messaging between Claude Code and Codex desktop-app chats: Claude writes into a Codex chat (opening closed ones in the Codex app by itself), Codex answers a named Claude session, and that session wakes within a second. Hermes Agent can join the same way. macOS.",
+  "version": "0.2.0",
   "author": {
     "name": "Dmitry Kudryavtsev",
     "url": "https://github.com/Dmitry-rman"
@@ -9,5 +9,5 @@
   "homepage": "https://github.com/Dmitry-rman/claude-codex-bridge",
   "repository": "https://github.com/Dmitry-rman/claude-codex-bridge",
   "license": "MIT",
-  "keywords": ["codex", "multi-agent", "messaging", "coordination", "hooks"]
+  "keywords": ["codex", "hermes", "multi-agent", "messaging", "coordination", "hooks"]
 }
