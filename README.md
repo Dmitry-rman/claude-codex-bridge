@@ -60,8 +60,8 @@ Settings (environment variables):
 
 - Codex keeps a writer lock for every chat the app has loaded (`~/.codex/thread-writer-locks`). If the app holds it, the message goes through `codex queue`. A closed chat is first opened in the app with the `codex://threads/<id>` link (the Codex window may switch to it), then queued. Only if the app cannot load it does the plugin fall back to `codex exec resume <chat>` in the background (sandbox `workspace-write`, no approval prompts); while that runs, the app shows the chat as open in another app.
 - Every finished Codex turn is written to the chat's journal in `~/.codex/sessions`. Waiting for an answer means waiting for the next `task_complete` there.
-- Claude session names come from `~/.claude/sessions/*.json`. `send` records which session last wrote to each chat (`~/.claude/codex-chat/senders.json`), so unnamed answers go back to it, and a session waiting with `send --wait` is not woken a second time by the hook.
-- The plugin's `Stop` hook runs with `asyncRewake` after each Claude turn: one listener per session, the previous one is replaced, read positions are saved so nothing is lost in between. A matching message is printed and the hook exits with code 2, which wakes the session.
+- Claude session names come from `~/.claude/sessions/*.json`. `send` records which session last wrote to each chat (`~/.claude/codex-chat/senders.json`), so Codex's plain reply to a message — the first turn that began after it — and unnamed answers go back to it, and a session waiting with `send --wait` is not woken a second time by the hook.
+- The plugin's hook runs with `asyncRewake` when a Claude session starts and after each of its turns, so sessions listen again after the app restarts: one listener per session, the previous one is replaced, read positions are saved so nothing is lost in between. A matching message is printed and the hook exits with code 2, which wakes the session.
 
 ## Hermes Agent
 

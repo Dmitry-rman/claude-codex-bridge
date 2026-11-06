@@ -1,7 +1,7 @@
 {
   "name": "codex-chat",
   "description": "Direct messaging between Claude Code and Codex desktop-app chats: Claude writes into a Codex chat (opening closed ones in the Codex app by itself), Codex answers a named Claude session, and that session wakes within a second. Hermes Agent can join the same way. macOS.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "Dmitry Kudryavtsev",
     "url": "https://github.com/Dmitry-rman"

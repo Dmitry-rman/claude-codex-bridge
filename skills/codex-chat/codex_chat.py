@@ -279,12 +279,18 @@ def events(journal, offset=0):
     found = []
     for line in data[:end].splitlines():
         try:
-            payload = json.loads(line).get("payload") or {}
+            entry = json.loads(line)
+            payload = entry.get("payload") or {}
         except ValueError:
             continue
         if payload.get("type") in ("task_started", *TURN_END):
-            found.append(payload)
+            found.append(dict(payload, _ts=entry.get("timestamp", "")))
     return found, offset + end
+
+
+def utc_now():
+    # The same shape as journal timestamps, so the two compare as strings.
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
 
 
 def size(path):
@@ -420,15 +426,17 @@ def alive(pid):
         return False
 
 
-def delivers_here(chat_id, text, name, session):
+def delivers_here(chat_id, text, name, session, started=""):
+    """Whether this answer goes to this session; started is when its turn began."""
     to = addressee(text)
-    if to is None:
-        return False
     sender = senders().get(chat_id) or {}
-    if session and sender.get("session") == session and (
-        alive(sender.get("wait_pid")) or sender.get("answered") == text
-    ):
+    mine = bool(session) and sender.get("session") == session
+    if mine and (alive(sender.get("wait_pid")) or sender.get("answered") == text):
         return False  # The session's own `send --wait` hands this answer over.
+    if to is None:
+        # A plain final answer is the reply to the session that wrote last, if the
+        # turn began after its message; a turn already running then is not the reply.
+        return mine and bool(sender.get("pending")) and started >= sender.get("sent_at", "~")
     if to:
         return not name or name_matches(to, name)
     # An unnamed answer belongs to whoever wrote to the chat last, if that session is open.
@@ -451,9 +459,17 @@ def new_hermes_answers(offsets):
             rows, offsets[key] = hermes_answers(home, offsets[key])
         except Unavailable:
             continue  # A Hermes change must not silence Codex.
-        found += [({"id": f"hermes:{sid}", "title": f"Hermes: {title}", "hermes": sid}, text or "")
+        found += [({"id": f"hermes:{sid}", "title": f"Hermes: {title}", "hermes": sid}, text or "", "")
                   for sid, text, title in rows]
     return found
+
+
+def mark_delivered(chat_id, session, text):
+    known = senders()
+    entry = known.get(chat_id)
+    if entry and entry.get("session") == session:
+        entry.update(pending=False, answered=text)
+        (STATE / "senders.json").write_text(json.dumps(known))
 
 
 def watched_files(current):
@@ -473,16 +489,23 @@ def wait_addressed(timeout, name_of, offsets=None, save=None, session=None):
         offsets = {c["id"]: size(c["journal"]) for c in codex_chats()}
         new_hermes_answers(offsets)
     deadline = deadline_of(timeout)
+    starts = {}
     while deadline is None or time.monotonic() < deadline:
         current = codex_chats()
         found = []
         for chat in current:
             # A chat that appears while waiting is new from its first line.
             events_, offsets[chat["id"]] = events(chat["journal"], offsets.get(chat["id"], 0))
-            found += [(chat, answer(e)) for e in events_ if e["type"] in TURN_END]
+            for e in events_:
+                if e["type"] == "task_started":
+                    starts[chat["id"]] = e["_ts"]
+                else:
+                    # A turn begun before this listener: judge it by its end instead.
+                    found.append((chat, answer(e), starts.pop(chat["id"], e["_ts"])))
         found += new_hermes_answers(offsets)
-        for chat, text in found:
-            if delivers_here(chat["id"], text, name_of(), session):
+        for chat, text, started in found:
+            if delivers_here(chat["id"], text, name_of(), session, started):
+                mark_delivered(chat["id"], session, text)
                 save and save(offsets)
                 return chat, text
         save and save(offsets)
@@ -582,7 +605,8 @@ def cmd_send(args):
     chat = find_chat(args[0])
     offset = size(chat["journal"])
     text = f"{SIGNATURE[who][language()]} {args[1]}"
-    record_sender(chat, who, wait_pid=os.getpid() if wait else None, answered=None)
+    record_sender(chat, who, wait_pid=os.getpid() if wait else None, answered=None,
+                  pending=True, sent_at=utc_now())
     holder = lock_holder(chat)
     opened = holder is None and open_in_app(chat)
     if opened:
@@ -606,7 +630,7 @@ def cmd_send(args):
         answer_text = wait_turn(chat, offset, float(timeout), new_turn=True)
         if answer_text is None:
             sys.exit("Timed out: Codex did not start or finish a turn.")
-        record_sender(chat, who, answered=answer_text)
+        record_sender(chat, who, answered=answer_text, pending=False)
         print(f"[{chat['title']}] {answer_text}")
 
 
